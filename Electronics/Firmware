@@ -1,0 +1,190 @@
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+/* Uncomment the initialize the I2C address , uncomment only one, If you get a totally blank screen try the other*/
+#define i2c_Address 0x3c //initialize with the I2C addr 0x3C Typically eBay OLED's
+//#define i2c_Address 0x3d //initialize with the I2C addr 0x3D Typically Adafruit OLED's
+const int sensorPin = 3;
+const int buzzerPin = 44;
+const int DRY_RAW = 2900; 
+const int WET_RAW = 1300;
+enum PlantMood { MOOD_HAPPY, MOOD_ANGRY, MOOD_TIRED };
+PlantMood lastMood = MOOD_HAPPY;
+unsigned long lastReminderMs = 0;
+
+// How often to repeat the annoying alert when dry (in milliseconds)
+const unsigned long REMINDER_INTERVAL_MS = 4000; // every 4 seconds
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define OLED_RESET -1   //   QT-PY / XIAO
+Adafruit_SSD1306 display = Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+#include <FluxGarage_RoboEyes.h>
+RoboEyes<Adafruit_SSD1306> roboEyes(display); // create RoboEyes instance
+
+
+void setup()   {
+  Serial.begin(9600);
+  analogReadResolution(12);
+  pinMode(sensorPin, INPUT);
+  pinMode(buzzerPin, OUTPUT);
+
+  // Initialize I2C communication
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  // 0x3C is the most common I2C address for these displays
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+
+  // Startup robo eyes
+  roboEyes.begin(SCREEN_WIDTH, SCREEN_HEIGHT, 100); // screen-width, screen-height, max framerate
+
+  // Define some automated eyes behaviour
+  roboEyes.setAutoblinker(ON, 3, 2); // Start auto blinker animation cycle -> bool active, int interval, int variation -> turn on/off, set interval between each blink in full seconds, set range for random interval variation in full seconds
+  roboEyes.setIdleMode(ON, 2, 2); // Start idle animation cycle (eyes looking in random directions) -> turn on/off, set interval between each eye repositioning in full seconds, set range for random time interval variation in full seconds
+  
+  // Define eye shapes, all values in pixels
+  //roboEyes.setWidth(36, 36); // byte leftEye, byte rightEye
+  //roboEyes.setHeight(36, 36); // byte leftEye, byte rightEye
+  //roboEyes.setBorderradius(8, 8); // byte leftEye, byte rightEye
+  //roboEyes.setSpacebetween(10); // int space -> can also be negative
+
+  // Cyclops mode
+  //roboEyes.setCyclops(ON); // bool on/off -> if turned on, robot has only on eye
+
+  // Define mood, curiosity and position
+  //roboEyes.setMood(DEFAULT); // mood expressions, can be TIRED, ANGRY, HAPPY, DEFAULT
+  //roboEyes.setPosition(DEFAULT); // cardinal directions, can be N, NE, E, SE, S, SW, W, NW, DEFAULT (default = horizontally and vertically centered)
+  //roboEyes.setCuriosity(ON); // bool on/off -> when turned on, height of the outer eyes increases when moving to the very left or very right
+
+  // Set horizontal or vertical flickering
+  //roboEyes.setHFlicker(ON, 2); // bool on/off, byte amplitude -> horizontal flicker: alternately displacing the eyes in the defined amplitude in pixels
+  //roboEyes.setVFlicker(ON, 2); // bool on/off, byte amplitude -> vertical flicker: alternately displacing the eyes in the defined amplitude in pixels
+
+  // Play prebuilt oneshot animations
+  //roboEyes.anim_confused(); // confused - eyes shaking left and right
+  //roboEyes.anim_laugh(); // laughing - eyes shaking up and down
+  
+}
+
+//Level of ideal moisture for the most common house plants, if your plant isnt on here, paste this code into your favorite A.I 
+//and ask what level your plant is at:
+// Ideal moisture thresholds (0-100 scale, matching mapped sensor %):
+//
+// • Aloe Vera (Aloe barbadensis): 9% — Needs dry soil most of the time.
+// • Haworthia / Zebra Plant: 11% — Thrives with minimal water and fast-draining mix.
+// • Snake Plant (Dracaena trifasciata): 12% — Prefers soil to dry out completely between waterings.
+// • Jade Plant (Crassula ovata): 13% — Wants deep, infrequent watering only after fully drying.
+// • ZZ Plant (Zamioculcas zamiifolia): 14% — Stores water in rhizomes and dislikes staying damp.
+// • String of Pearls / String of Hearts: 16% — Needs dry intervals to prevent root rot.
+// • Cast Iron Plant (Aspidistra elatior): 36% — Likes soil to dry mostly out before watering again.
+// • Pothos (Epipremnum aureum): 42% — Thrives when the top half of the soil dries between waterings.
+// • Spider Plant (Chlorophytum comosum): 48% — Enjoys moderate moisture without soggy roots.
+// • Rubber Plant (Ficus elastica): 49% — Likes evenly light moisture with the top couple inches drying out.
+// • Chinese Money Plant (Pilea peperomioides): 50% — Prefers a balanced wet-to-dry cycle.
+// • Heartleaf Philodendron (Philodendron hederaceum): 51% — Does best with moderate moisture and slight drying on top.
+// • Monstera (Monstera deliciosa): 54% — Appreciates steady moisture in well-draining soil.
+// • Fiddle Leaf Fig (Ficus lyrata): 58% — Prefers consistent, moderate moisture without sitting in water.
+// • Moth Orchid (Phalaenopsis): 62% — Likes airy moisture and high humidity rather than wet soil.
+// • Peace Lily (Spathiphyllum): 76% — Prefers consistently moist soil and wilts quickly when dry.
+// • Prayer Plant (Maranta / Calathea): 82% — Needs evenly damp soil and high air humidity.
+// • Boston Fern (Nephrolepis exaltata): 89% — Craves constant moisture in both soil and air.
+
+
+void loop() {
+ roboEyes.update();
+
+  int analogValue = analogRead(sensorPin);
+  int moisture = map(analogValue, DRY_RAW, WET_RAW, 0, 100);
+  moisture = constrain(moisture, 0, 100);
+
+  PlantMood currentMood;
+  if (moisture >= 40) {
+    currentMood = MOOD_HAPPY;
+    roboEyes.setMood(HAPPY);
+  } else if (moisture > 20 ) {
+    currentMood = MOOD_ANGRY;
+    roboEyes.setMood(ANGRY);
+  } else {
+    currentMood = MOOD_TIRED;
+    roboEyes.setMood(TIRED);
+  }
+
+  unsigned long now = millis();
+  bool moodChanged = (currentMood != lastMood);
+
+  if (currentMood == MOOD_HAPPY) {
+    if (moodChanged) {
+      playHappy(); // celebratory chirp when watered
+      lastReminderMs = now;
+    }
+  } else {
+    // Needs water (ANGRY or TIRED): play immediately on entry, then repeat every REMINDER_INTERVAL_MS
+    if (moodChanged || (now - lastReminderMs >= REMINDER_INTERVAL_MS)) {
+      if (currentMood == MOOD_ANGRY) {
+        playAngry();
+      } else {
+        playTired();
+      }
+      lastReminderMs = now;
+    }
+  }
+
+  lastMood = currentMood;
+}
+
+void playHappy() {
+  // First chirp (rising)
+  for (int freq = 800; freq <= 1600; freq += 40) {
+    tone(buzzerPin, freq);
+    roboEyes.update();
+    delay(20);
+  }
+  noTone(buzzerPin);
+  delay(60);
+
+  // Second chirp (higher, bouncy finish)
+  for (int freq = 1200; freq <= 2200; freq += 50) {
+    tone(buzzerPin, freq);
+    roboEyes.update();
+    delay(18);
+  }
+  noTone(buzzerPin);
+}
+
+// 2. ANGRY: Low, harsh, erratic frequency jumps with rapid pulsing
+void playAngry() {
+  for (int i = 0; i < 4; i++) {
+    tone(buzzerPin, 280);
+    delay(70);
+    tone(buzzerPin, 220); // Drops down aggressively
+    roboEyes.update();
+    delay(70);
+  }
+  noTone(buzzerPin);
+}
+
+// 3. TIRED: Slow, sagging pitch glides that drag downward and fade out
+void playTired() {
+  for (int freq = 900; freq >= 400; freq -= 15) {
+    tone(buzzerPin, freq);
+    roboEyes.update();
+    delay(25);
+  }
+  noTone(buzzerPin);
+
+  unsigned long pauseStart = millis();
+  while (millis() - pauseStart < 300) {
+    roboEyes.update();
+  }
+
+  for (int freq = 500; freq >= 200; freq -= 10) {
+    tone(buzzerPin, freq);
+    roboEyes.update();
+    delay(40);
+  }
+  noTone(buzzerPin);
+}

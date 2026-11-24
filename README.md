@@ -14,6 +14,7 @@ The Electronics:
 
 The CAD:
 
+-The Onshape link:
 https://cad.onshape.com/documents/fa7c49e9b4da2c6559626692/w/87dc8cc142b4987819eabf60/e/572d0358d2ebd27b84209106?renderMode=0&uiState=6b05f7f429efc7e069ffbdb8
 
 <img width="393" height="275" alt="Screenshot 2026-11-20 160938" src="https://github.com/user-attachments/assets/1196777e-1c30-4250-af33-288154c4e9a8" />
